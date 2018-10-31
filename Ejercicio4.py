@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Wed Oct 17 21:33:15 2018
+Created on Wed Oct 31 16:07:40 2018
 
 @author: lisandro
 """
@@ -18,7 +18,7 @@ from pandas import DataFrame
 
 #Funciones
 
-def periodograma(x,fs):
+def periodograma(x,fs,db = False):
     
     #Largo de x
     n = np.size(x,0)
@@ -27,7 +27,7 @@ def periodograma(x,fs):
     analizador = sa.spectrum_analyzer(fs,n,"fft")
 
     #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-    (f,Sx) = analizador.psd(x,xaxis = 'phi')
+    (f,Sx) = analizador.psd(x,db = db,xaxis = 'phi')
 
     #Hago el promedio en las realizaciones
     Sxm = np.mean(Sx,1)
@@ -38,7 +38,7 @@ def periodograma(x,fs):
     
     return (f,Sxm,Sxv)
 
-def bartlett(x,k,fs,window = 'rectangular'):
+def bartlett(x,k,fs,db = False,window = 'rectangular'):
         
     k = int(k)
     
@@ -83,7 +83,7 @@ def bartlett(x,k,fs,window = 'rectangular'):
             analizador = sa.spectrum_analyzer(fs,l,"fft")
             
             #Obtengo el espectro de modulo del bloque i-esimo para cada realizacion
-            (f,Sxi) = analizador.psd(xwi,xaxis = 'phi')
+            (f,Sxi) = analizador.psd(xwi,db = db,xaxis = 'phi')
             
             #Divido por la energia de la ventana
             Sxi = Sxi/(np.mean(np.power(w,2)))
@@ -112,7 +112,7 @@ def bartlett(x,k,fs,window = 'rectangular'):
     
     return f,Sxm,Sxv
 
-def welch(x,k,fs,window = 'rectangular',overlap = 50):
+def welch(x,k,fs,window = 'rectangular',db = False,overlap = 50):
         
     k = int(k)
     
@@ -176,7 +176,7 @@ def welch(x,k,fs,window = 'rectangular',overlap = 50):
             analizador = sa.spectrum_analyzer(fs,l,"fft")
             
             #Obtengo el espectro de modulo del bloque i-esimo para cada realizacion
-            (f,Sxi) = analizador.psd(xwi,xaxis = 'phi')
+            (f,Sxi) = analizador.psd(xwi,db = db,xaxis = 'phi')
             
             #Divido por la energia de la ventana
             Sxi = Sxi/(np.mean(np.power(w,2)))
@@ -205,106 +205,159 @@ def welch(x,k,fs,window = 'rectangular',overlap = 50):
     
     return f,Sxm,Sxv
 
+#Funciones
+
+def shift(x,delay):
+    
+    N = np.size(x,0)
+    xd = np.zeros([N,1],dtype = float)
+    adelantado = False
+    
+    if delay < 0:
+        adelantado = True
+        delay = -int(delay)
+        x = np.flip(x,axis = 0)
+    else:
+        delay = int(delay)
+        adelantado = False
+    
+    
+    for i in range(N):
+        if i < delay:
+            xd[i,0] = 0
+        else:
+            xd[i,0] = x[i - delay,0]
+
+    if adelantado is True:
+        xd = np.flip(xd,axis = 0)
+
+    return xd
+
+def autocorrelation(x):
+    
+    len_x = int(np.size(x,0))
+    len_r = int(len_x + len_x - 1)
+    
+    r = np.zeros([len_r,1],dtype = float)
+    k = np.zeros([len_r,1],dtype = int)
+    
+    for i in range(len_r):
+        k[i,0] = int(len_x - (len_r - i))
+        r[i,0] = np.sum(x*shift(x,int(k[i,0])))
+
+    r = (r/len_x)
+    
+    return (k,r)
+
+def blackman_tuckey(x,fs,window = 'rectangular'):
+    
+    #Realiza la autocorrelacion de x
+    (k,r) = autocorrelation(x)
+    
+    #Largo de la autocorrelacion
+    n = np.size(r)
+    
+    #Selecicona la ventana correspondiente
+
 #Testbench
 
 def testbench():
         
-    #Parametros del muestreo
-    N = np.array([128,256,512,1024,2048], dtype = int)
-    
-    #Frecuencias de muestreo
+    #Paramettros del muestreo
     fs = 1024
+    N = 1024
     
-    #Cantidad de realizaciones
-    S = 100
+    #Realizaciones
+    S = 200
     
-    #En cuantos bloques divido (2^k)
-    k = 4
+    #Parametros de la señal x1
+    a1 = np.sqrt(2)
+    A1 = a1*np.ones((S,1),dtype = float)
+    p1 = 0
+    P1 = p1*np.ones((S,1),dtype = float)
+    fo = np.pi/2
     
-    #Aca se almacenaran los resultados
-    tus_resultados = []
-    sesgos = np.zeros([np.size(N),],dtype = float)
-    varianzas = np.zeros([np.size(N),],dtype = float)
-    
-    #Contador
-    j = 0
-    
-    #Para cada largo de señal
-    for Ni in N:
-                
-        #Enciendo el generador de funciones
-        generador = gen.signal_generator(fs,Ni)
-                
-        #Lista en que alamacenre las distribuciones para cada realizacion
-        dist = []
-        
-        #Distribucion elegida para cada realizacion (todas normales)
-        for i in range(0,S):
-            dist.append("normal")
-        
-        #Media - Todas las realizaciones de media 0
-        u = np.zeros((S,1),dtype = float)
-        
-        #Varianza - Todas las realizaciones de desvio estandar de raiz de 2
-        s = np.sqrt(2)*np.ones((S,1),dtype = float)
-        
-        #Llamo al metodo que genera ruido blanco
-        #Genera una matriz de NxS, donde N = Filas y S = Columnas
-        (t,x) = generador.noise(dist,u,s)
-            
-        #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-        (f,Sxm,Sxv) = welch(x,k,fs,window = 'hann',overlap = 25)
-        
-        #Calculo el area de ese espectro "promedio"
-        #El area de la psd da la potencia
-        valor_esperado = np.sum(Sxm)
-        print('Valor esperado:' + str(valor_esperado))
-        sesgo = valor_esperado - np.power(s[0,0],2)
-        
-        #Calculo el area de eso
-        #TODO: Tengo un error de escala con esto. DETECTAR la fuente del problema
-        varianza = np.sum(Sxv)
-        print('Varianza del estimador:' + str(varianza))
-        
-        #Almaceno los resultados para esta largo de señal
-        tus_resultados.append([str(sesgo),str(varianza)])
-        
-        #Sesgos
-        sesgos[j] = sesgo
-        
-        #Varianzas
-        varianzas[j] = varianza
-        
-        #Aumento el contador
-        j = j + 1
+    #Parametros del ruido(distribucion normal)
     
     
-    #Presentación gráfica de resultados
+    #Lista en que alamacenre las distribuciones para cada realizacion
+    dist = []
+    #Distribucion elegida para cada realizacion (todas normales)
+    for i in range(0,S):
+        dist.append("normal")    
+    #Media - Todas las realizaciones de media 0
+    u = 0
+    U = u*np.ones((S,1),dtype = float)
+    #Varianza - Se setea en funcion de snr,que indica cuantos db por debajo
+    #quiero que este de x1
+    snr = 20
+    var = (N)*(np.power(a1,2)/2)*(np.power(10,-(snr/10)))
+    SD = np.sqrt(var)*np.ones((S,1),dtype = float)
+    
+    #Limites de la distribucion uniforme de fr
+    linf = -0*((2*np.pi)/N)
+    lsup = 0*((2*np.pi)/N)
+    
+    #Fr sera una variable aleatoria de distribucion uniforme entre -1/2 y 1/2
+    #Genero 200 realizaciones de fr
+    fr = np.random.uniform(linf,lsup,S).reshape(S,1)
+    
+    #Genero 200 realizaciones de f1
+    F1 = fo + fr
+
+    #Enciendo el generador de funciones
+    generador = gen.signal_generator(fs,N)
+    
+    #Genero 200 realizaciones de x
+    (t,x1) = generador.sinewave(A1,F1,P1,freq = 'normalized_frequency')
+    
+    #Genero 200 realizaciones de n
+    (t,n) = generador.noise(dist,U,SD)
+    
+    #Genero 200 realizaciones de x = x1 + n
+    x = x1 + n
+        
+    #Estimador Periodograma
+    (fp,Sxxm_p,Sxxv_p) = periodograma(x,fs,db = True) 
+
+    f1_estimador_periodograma = (np.ediff1d(fp)[0])*np.argmax(Sxxm_p)
+    sesgo_periodograma = f1_estimador_periodograma - fo
+    
+    #Estimador de Bartlett
+    k = 32
+    (fb,Sxxm_b,Sxxv_b) = bartlett(x,k,fs,db = True,window = 'hann')
+
+    f1_estimador_bartlett = (np.ediff1d(fb)[0])*np.argmax(Sxxm_b)
+    sesgo_bartlett = f1_estimador_bartlett - fo
+    
+    #Etimador de Welch
+    k = 32
+    (fw,Sxxm_w,Sxxv_w) = welch(x,k,fs,db  = True,window = 'hann',overlap = 50)
+    
+    f1_estimador_welch = (np.ediff1d(fw)[0])*np.argmax(Sxxm_w)
+    sesgo_welch = f1_estimador_welch - fo
+
+    print('f1p =' + str(f1_estimador_periodograma))
+    print('sp =' + str(sesgo_periodograma))
+    print('f1b =' + str(f1_estimador_bartlett))
+    print('sb =' + str(sesgo_bartlett))
+    print('f1w =' + str(f1_estimador_welch))
+    print('sw =' + str(sesgo_welch))
+
+    #Grafico los resultados
     plt.figure()
-    fig, axarr = plt.subplots(2, 1,figsize = (10,5)) 
-    fig.suptitle('Evolución de los parámetros del periodograma en función del largo de la señal',fontsize=12,y = 1.08)
-    fig.tight_layout()
+    plt.plot(fp,Sxxm_p)
+    plt.grid()
+
+    #Grafico los resultados
+    plt.figure()
+    plt.plot(fb,Sxxm_b)
+    plt.grid()
     
-    axarr[0].plot(N,sesgos)
-    axarr[0].set_title('Sesgo del periodograma en función del largo de la señal')
-    axarr[0].set_ylabel('$s_{p}[N]$')
-    axarr[0].set_xlabel('$N$')
-    axarr[0].set_ylim((1.1*min(sesgos),max(sesgos)*1.1))
-    axarr[0].axis('tight')
-    axarr[0].grid()
-    
-    axarr[1].plot(N,varianzas)
-    axarr[1].set_title('Varianza del periodograma en función del largo de la señal')
-    axarr[1].set_ylabel('$v_{p}[N]$')
-    axarr[1].set_xlabel('$N$')
-    axarr[1].set_ylim((1.1*min(varianzas),max(varianzas)*1.1))
-    axarr[1].axis('tight')
-    axarr[1].grid()
-    
-    #Almaceno el resultado en el dataframe
-    df = DataFrame(tus_resultados, columns=['$s_P$', '$v_P$'],index=N)
-    
-    print(df)
+    #Grafico los resultados
+    plt.figure()
+    plt.plot(fw,Sxxm_w)
+    plt.grid()
     
 #Script
 

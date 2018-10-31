@@ -20,7 +20,12 @@ class spectrum_analyzer:
         #Resolucion espectral
         self.df = fs/N
         #Frecuencia maxima sin que haya aliasing (normalizada fn = f/df)
-        self.fmax = int((N/2))
+        #Depende de la paridad de N
+        if (N % 2) == 0:
+            self.fmax = int((N/2)+1)
+        else:
+            self.fmax = int((N+1)/2)
+        
         #Frecuencia minima sin que haya aliasing (normalizada fn = f/df )
         self.fmin = int(0)
         #Vector de frecuencias
@@ -45,23 +50,23 @@ class spectrum_analyzer:
         #Es decir de 0 a fs/2
         
         if xaxis is 'phi_norm':
-            f = np.abs(self.phi_norm[self.fmin:(self.fmax + 1)])
+            f = np.abs(self.phi_norm[self.fmin:self.fmax])
         elif xaxis is 'phi':
-            f = np.abs(self.phi[self.fmin:(self.fmax + 1)])
+            f = np.abs(self.phi[self.fmin:self.fmax])
         elif xaxis is 'bin':
-            f = np.abs(self.bin[self.fmin:(self.fmax + 1)])
+            f = np.abs(self.bin[self.fmin:self.fmax])
         elif xaxis is 'frequency':
-            f = np.abs(self.f[self.fmin:(self.fmax + 1)])
+            f = np.abs(self.f[self.fmin:self.fmax])
         else:
-            f = np.abs(self.f[self.fmin:(self.fmax + 1)])
+            f = np.abs(self.f[self.fmin:self.fmax])
 
         f = np.reshape(f,(np.size(f),1))
         
         #Se genera un vector auxiliar de modulo para plotear solo banda digital
     
-        X_mod_aux = X_mod[self.fmin:(self.fmax + 1),:]
+        X_mod_aux = X_mod[self.fmin:self.fmax,:]
         #aux = np.array([2*Xi if (Xi != X_mod_aux[self.fmin] and Xi != X_mod_aux[self.fmax]) else Xi for Xi in X_mod_aux],dtype = float)
-        aux = np.transpose(np.array([[2*Xij if (Xij != Xi[self.fmin] and Xij != Xi[self.fmax]) else Xij for Xij in Xi] for Xi in np.transpose(X_mod_aux)],dtype = float))
+        aux = np.transpose(np.array([[2*Xij if (Xij != Xi[self.fmin] and Xij != Xi[self.fmax-1]) else Xij for Xij in Xi] for Xi in np.transpose(X_mod_aux)],dtype = float))
         X_mod_aux = aux
 
         if db is True:
@@ -80,6 +85,53 @@ class spectrum_analyzer:
             plt.show()
         
         return(f,X_mod_aux)        
+
+    def psd(self,x,plot = False,db = False,xaxis = 'frequency'):
+        
+        X = self.transform(x)
+        X = X/(np.size(X,0))
+        Sx = np.power(np.abs(X),2)
+        
+        
+        #Se genera una vector auxiliar de f para solo plotear banda digital
+        #Es decir de 0 a fs/2
+        
+        if xaxis is 'phi_norm':
+            f = np.abs(self.phi_norm[self.fmin:self.fmax])
+        elif xaxis is 'phi':
+            f = np.abs(self.phi[self.fmin:self.fmax])
+        elif xaxis is 'bin':
+            f = np.abs(self.bin[self.fmin:self.fmax])
+        elif xaxis is 'frequency':
+            f = np.abs(self.f[self.fmin:self.fmax])
+        else:
+            f = np.abs(self.f[self.fmin:self.fmax])
+
+        f = np.reshape(f,(np.size(f),1))
+
+        #Se genera un vector auxiliar de modulo para plotear solo banda digital
+    
+        Sx = Sx[self.fmin:self.fmax,:]
+        #aux = np.array([2*Xi if (Xi != X_mod_aux[self.fmin] and Xi != X_mod_aux[self.fmax]) else Xi for Xi in X_mod_aux],dtype = float)
+        Saux = np.transpose(np.array([[2*Sij if (Sij != Si[self.fmin] and Sij != Si[self.fmax-1]) else Sij for Sij in Si] for Si in np.transpose(Sx)],dtype = float))
+        Sx = Saux
+
+        if db is True:
+            Sx = 10*np.log10(Sx + np.finfo(float).eps) #Unidad: dBW
+                
+        #Presentacion frecuencia de los resultados de modulo        
+        if plot is True:
+            plt.figure()
+            plt.title('Espectro de modulo')
+            
+            plt.stem(f,Sx)
+            plt.axis('tight')
+            plt.xlabel('f[Hz]')
+            plt.ylabel('|X(f)|[V]')
+            plt.grid()
+            plt.show()
+        
+        return(f,Sx)     
 
     def module_phase(self,x):
         

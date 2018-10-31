@@ -13,8 +13,9 @@ import matplotlib.pyplot as plt
 
 import pdsmodulos.signal_generator as gen
 import pdsmodulos.spectrum_analyzer as sa
-import pdsmodulos.windows as win
 from pandas import DataFrame
+
+import spectrum as sp
 
 #Funciones
 
@@ -27,92 +28,25 @@ def periodograma(x,fs):
     analizador = sa.spectrum_analyzer(fs,n,"fft")
 
     #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-    (f,Sx) = analizador.psd(x,xaxis = 'phi')
-
-    #Hago el promedio en las realizaciones
-    Sxm = np.mean(Sx,1)
+    (f,Xmod) = analizador.module(x,xaxis = 'phi')
+    #Para pasar de veces a psd tengo que dividir por dos, luego elevar al cuadrado y volver a multiplicar por dos
+    Sx = np.transpose(np.array([[Xij/2 if (Xij != Xi[0] and Xij != Xi[np.size(Xmod,0)-1]) else Xij for Xij in Xi] for Xi in np.transpose(Xmod)],dtype = float))
+    Sx = 2*np.power(Sx,2)
     
-    #Hago la varianza en las realizaciones
-    Sxv = np.var(Sx,1)
-    Sxv = Sxv*np.size(Sxv,0)
+    return (f,Sx)
     
-    return (f,Sxm,Sxv)
-
-def bartlett(x,k,fs,window = 'rectangular'):
-        
-    k = int(np.power(2,k))
-    
-    n = np.size(x,0)
-    l = int(n/k)
-    
-    realizaciones = np.size(x,1)
-    
-    Sx = np.zeros([int(l/2) + 1,int(realizaciones),int(k)],dtype = float)
-    
-    if window is 'rectangular':
-        w = win.rectangular(l)
-    elif window is 'bartlett':
-        w = win.bartlett(l)
-    elif window is 'hann':
-        w = win.hann(l)
-    elif window is 'hamming':
-        w = win.hamming(l)
-    elif window is 'blackman':
-        w = win.blackman(l)
-    elif window is 'flat-top':
-        w = win.flattop(l)
-    else:
-        w = win.rectangular(l)
-        
-    for i in range(0,k):
-        
-        #Obtengo el bloque i-esimo para cada realizacion
-        xi = x[int(i*l):int((i+1)*l),:]
-        
-        #Al bloque i-esimo de cada realizacion le aplico el ventaneo correspondiente
-        xwi = (xi*w)
-        
-        #Enciendo el analizador de espectro
-        analizador = sa.spectrum_analyzer(fs,l,"fft")
-        
-        #Obtengo el espectro de modulo del bloque i-esimo para cada realizacion
-        (f,Sxi) = analizador.psd(xwi,xaxis = 'phi')
-        
-        #Divido por la energia de la ventana
-        Sxi = Sxi/(np.mean(np.power(w,2)))
-        
-        #Lo agrego al resultado general
-        Sx[:,:,i] = Sxi
-    
-    #Promedio para cada realizacion cada uno de los bloques
-    #Deberia quedar una matriz con lxr
-    #Donde l es el largo del bloque y r es la cantidad de realizaciones
-    Sx = np.mean(Sx,axis = 2)
-    
-    #Hago el promedio en las realizaciones
-    Sxm = np.mean(Sx,1)
-    
-    #Hago la varianza en las realizaciones
-    Sxv = np.var(Sx,1)
-    Sxv = Sxv*np.size(Sxv,0)
-    
-    return f,Sxm,Sxv
-
 #Testbench
 
 def testbench():
         
     #Parametros del muestreo
-    N = np.array([32,64,128,256,512,1024,2048,4096], dtype = int)
+    N = np.array([256, 512, 1024, 2048], dtype = int)
     
     #Frecuencias de muestreo
     fs = 1024
     
     #Cantidad de realizaciones
     S = 100
-    
-    #En cuantos bloques divido (2^k)
-    k = 2
     
     #Aca se almacenaran los resultados
     tus_resultados = []
@@ -145,27 +79,29 @@ def testbench():
         #Genera una matriz de NxS, donde N = Filas y S = Columnas
         (t,x) = generador.noise(dist,u,s)
             
-        #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-        (f,Sxm,Sxv) = bartlett(x,k,fs,window = 'hann')
+        #Periodograma
+        (f,Xpsd) = periodograma(x,fs)
+        
+        Xpsd2 = sp.Periodogram(x,sampling = fs,NFFT = int(np.size(x,0)))
+
+        #Una vez que tengo todas las realizaciones de la PSD le calculo el espectro promedio. 
+        #Esto quiere decir, calcular la media de ca
+        #da fila. Si la matriz es de NxS. Me tiene que quedar una matriz de Nx1
+        #Es decir, el promedio a cada frecuencia
+        m = np.mean(Xpsd,1)
         
         #Calculo el area de ese espectro "promedio"
-        #El area de la psd da la potencia
-        valor_esperado = np.sum(Sxm)
-        print('Valor esperado:' + str(valor_esperado))
+        valor_esperado = np.sum(m)
+        
         sesgo = valor_esperado - np.power(s[0,0],2)
+        
+        #Calculo la varianza a cada frecuencia
+        v = np.var(Xpsd,1)
         
         #Calculo el area de eso
         #TODO: Tengo un error de escala con esto. DETECTAR la fuente del problema
-        varianza = np.sum(Sxv)
-        print('Varianza del estimador:' + str(varianza))
+        varianza = np.sum(v)
         
-        
-        #Grafico la media de cada punto de frecuencia y la varianza de
-        #cada punto de frecuencia
-        plt.figure()
-        plt.plot(f,Sxm,f,Sxv)
-        plt.grid()
-                
         #Almaceno los resultados para esta largo de señal
         tus_resultados.append([str(sesgo),str(varianza)])
         
