@@ -13,213 +13,27 @@ import matplotlib.pyplot as plt
 
 import pdsmodulos.signal_generator as gen
 import pdsmodulos.spectrum_analyzer as sa
-import pdsmodulos.windows as win
 from pandas import DataFrame
-
-#Funciones
-
-def periodograma(x,fs):
-    
-    #Largo de x
-    n = np.size(x,0)
-
-    #Enciendo el analizador de espectro
-    analizador = sa.spectrum_analyzer(fs,n,"fft")
-
-    #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-    (f,Sx) = analizador.psd(x,xaxis = 'phi')
-
-    #Hago el promedio en las realizaciones
-    Sxm = np.mean(Sx,1)
-    
-    #Hago la varianza en las realizaciones
-    Sxv = np.var(Sx,1)
-    Sxv = Sxv*np.size(Sxv,0)
-    
-    return (f,Sxm,Sxv)
-
-def bartlett(x,k,fs,window = 'rectangular'):
-        
-    k = int(k)
-    
-    n = np.size(x,0)
-    l = int(np.floor(n/k))
-    
-    if l is not 0:
-    
-        realizaciones = np.size(x,1)
-        
-        if (l % 2) != 0:
-            largo_espectro_un_lado = int((l+1)/2)
-        else:
-            largo_espectro_un_lado = int((l/2)+1)
-        
-        Sx = np.zeros([largo_espectro_un_lado,int(realizaciones),int(k)],dtype = float)
-        
-        if window is 'rectangular':
-            w = win.rectangular(l)
-        elif window is 'bartlett':
-            w = win.bartlett(l)
-        elif window is 'hann':
-            w = win.hann(l)
-        elif window is 'hamming':
-            w = win.hamming(l)
-        elif window is 'blackman':
-            w = win.blackman(l)
-        elif window is 'flat-top':
-            w = win.flattop(l)
-        else:
-            w = win.rectangular(l)
-            
-        for i in range(0,k):
-            
-            #Obtengo el bloque i-esimo para cada realizacion
-            xi = x[int(i*l):int((i+1)*l),:]
-            
-            #Al bloque i-esimo de cada realizacion le aplico el ventaneo correspondiente
-            xwi = (xi*w)
-            
-            #Enciendo el analizador de espectro
-            analizador = sa.spectrum_analyzer(fs,l,"fft")
-            
-            #Obtengo el espectro de modulo del bloque i-esimo para cada realizacion
-            (f,Sxi) = analizador.psd(xwi,xaxis = 'phi')
-            
-            #Divido por la energia de la ventana
-            Sxi = Sxi/(np.mean(np.power(w,2)))
-            
-            #Lo agrego al resultado general
-            Sx[:,:,i] = Sxi
-        
-        #Promedio para cada realizacion cada uno de los bloques
-        #Deberia quedar una matriz con lxr
-        #Donde l es el largo del bloque y r es la cantidad de realizaciones
-        Sx = np.mean(Sx,axis = 2)
-        
-        #Hago el promedio en las realizaciones
-        Sxm = np.mean(Sx,1)
-        
-        #Hago la varianza en las realizaciones
-        Sxv = np.var(Sx,1)
-        Sxv = Sxv*np.size(Sxv,0)
-    
-    else:
-        
-        print('La cantidad de bloques es mayor al largo de las realizaciones')
-        f = 0
-        Sxm = 0
-        Sxv = 0
-    
-    return f,Sxm,Sxv
-
-def welch(x,k,fs,window = 'rectangular',overlap = 50):
-        
-    k = int(k)
-    
-    n = np.size(x,0)
-    l = int(np.floor(n/k))
-    
-    if l is not 0:
-    
-        realizaciones = np.size(x,1)
-        
-        if (l % 2) != 0:
-            largo_espectro_un_lado = int((l+1)/2)
-        else:
-            largo_espectro_un_lado = int((l/2)+1)
-                
-        if window is 'rectangular':
-            w = win.rectangular(l)
-        elif window is 'bartlett':
-            w = win.bartlett(l)
-        elif window is 'hann':
-            w = win.hann(l)
-        elif window is 'hamming':
-            w = win.hamming(l)
-        elif window is 'blackman':
-            w = win.blackman(l)
-        elif window is 'flat-top':
-            w = win.flattop(l)
-        else:
-            w = win.rectangular(l)
-        
-        overlap_eficaz = np.ceil(l*(overlap/100))/l
-        
-        if int(l*overlap_eficaz) > (l-1):
-            overlap_eficaz = ((l-1)/(l))
-        
-        print('Procentaje de  solapamiento entre frames: ' + str(overlap_eficaz))
-        
-        
-        paso = int(l*(1-overlap_eficaz))
-        
-        print('Distancia entre frames: ' + str(paso))
-        
-        #Determinacion de la cantidad de frames
-        for cant_frames in range(0,n):
-            if int(n-(l + int(cant_frames*paso))) < paso:
-                print('Cantidad de frames: ' +str(cant_frames+1))
-                cant_frames = cant_frames+1
-                break
-
-        Sx = np.zeros([largo_espectro_un_lado,int(realizaciones),int(cant_frames)],dtype = float)
-        
-        for i in range(0,cant_frames):
-            
-            #Obtengo el bloque i-esimo para cada realizacion
-            xi = x[int(i*paso):int((i*paso)+l),:]
-            
-            #Al bloque i-esimo de cada realizacion le aplico el ventaneo correspondiente
-            xwi = (xi*w)
-            
-            #Enciendo el analizador de espectro
-            analizador = sa.spectrum_analyzer(fs,l,"fft")
-            
-            #Obtengo el espectro de modulo del bloque i-esimo para cada realizacion
-            (f,Sxi) = analizador.psd(xwi,xaxis = 'phi')
-            
-            #Divido por la energia de la ventana
-            Sxi = Sxi/(np.mean(np.power(w,2)))
-            
-            #Lo agrego al resultado general
-            Sx[:,:,i] = Sxi
-        
-        #Promedio para cada realizacion cada uno de los bloques
-        #Deberia quedar una matriz con lxr
-        #Donde l es el largo del bloque y r es la cantidad de realizaciones
-        Sx = np.mean(Sx,axis = 2)
-        
-        #Hago el promedio en las realizaciones
-        Sxm = np.mean(Sx,1)
-        
-        #Hago la varianza en las realizaciones
-        Sxv = np.var(Sx,1)
-        Sxv = Sxv*np.size(Sxv,0)
-    
-    else:
-        
-        print('La cantidad de bloques es mayor al largo de las realizaciones')
-        f = 0
-        Sxm = 0
-        Sxv = 0
-    
-    return f,Sxm,Sxv
 
 #Testbench
 
 def testbench():
         
     #Parametros del muestreo
-    N = np.array([128,256,512,1024,2048], dtype = int)
+    N = np.array([1024], dtype = int)
+
     
     #Frecuencias de muestreo
-    fs = 1024
+    fs = 1000
     
     #Cantidad de realizaciones
-    S = 100
+    S = 500
     
     #En cuantos bloques divido (2^k)
-    k = 4
+    ki = 4
+    
+    #Overlap entre bloques
+    ovi = 50
     
     #Aca se almacenaran los resultados
     tus_resultados = []
@@ -246,24 +60,23 @@ def testbench():
         u = np.zeros((S,1),dtype = float)
         
         #Varianza - Todas las realizaciones de desvio estandar de raiz de 2
-        s = np.sqrt(2)*np.ones((S,1),dtype = float)
+        s = np.sqrt(4)*np.ones((S,1),dtype = float)
         
         #Llamo al metodo que genera ruido blanco
         #Genera una matriz de NxS, donde N = Filas y S = Columnas
         (t,x) = generador.noise(dist,u,s)
             
         #Realizo de forma matricial el modulo del espectro de todas las realizaciones
-        (f,Sxm,Sxv) = welch(x,k,fs,window = 'hann',overlap = 25)
+        (f,Sxm,Sxv) = sa.welch(x,fs,k = ki,window = 'bartlett',overlap = 50)
         
         #Calculo el area de ese espectro "promedio"
         #El area de la psd da la potencia
-        valor_esperado = np.sum(Sxm)
+        valor_esperado = (np.mean(Sxm))
         print('Valor esperado:' + str(valor_esperado))
         sesgo = valor_esperado - np.power(s[0,0],2)
         
         #Calculo el area de eso
-        #TODO: Tengo un error de escala con esto. DETECTAR la fuente del problema
-        varianza = np.sum(Sxv)
+        varianza = (np.mean(Sxv))
         print('Varianza del estimador:' + str(varianza))
         
         #Almaceno los resultados para esta largo de señal
@@ -280,26 +93,26 @@ def testbench():
     
     
     #Presentación gráfica de resultados
-    plt.figure()
-    fig, axarr = plt.subplots(2, 1,figsize = (10,5)) 
-    fig.suptitle('Evolución de los parámetros del periodograma en función del largo de la señal',fontsize=12,y = 1.08)
-    fig.tight_layout()
-    
-    axarr[0].plot(N,sesgos)
-    axarr[0].set_title('Sesgo del periodograma en función del largo de la señal')
-    axarr[0].set_ylabel('$s_{p}[N]$')
-    axarr[0].set_xlabel('$N$')
-    axarr[0].set_ylim((1.1*min(sesgos),max(sesgos)*1.1))
-    axarr[0].axis('tight')
-    axarr[0].grid()
-    
-    axarr[1].plot(N,varianzas)
-    axarr[1].set_title('Varianza del periodograma en función del largo de la señal')
-    axarr[1].set_ylabel('$v_{p}[N]$')
-    axarr[1].set_xlabel('$N$')
-    axarr[1].set_ylim((1.1*min(varianzas),max(varianzas)*1.1))
-    axarr[1].axis('tight')
-    axarr[1].grid()
+#    plt.figure()
+#    fig, axarr = plt.subplots(2, 1,figsize = (10,5)) 
+#    fig.suptitle('Evolución de los parámetros del periodograma en función del largo de la señal',fontsize=12,y = 1.08)
+#    fig.tight_layout()
+#    
+#    axarr[0].stem(N,np.abs(sesgos))
+#    axarr[0].set_title('Sesgo del periodograma en función del largo de la señal')
+#    axarr[0].set_ylabel('$s_{p}[N]$')
+#    axarr[0].set_xlabel('$N$')
+#    axarr[0].set_ylim((1.1*min(sesgos),max(sesgos)*1.1))
+#    axarr[0].axis('tight')
+#    axarr[0].grid()
+#    
+#    axarr[1].stem(N,varianzas)
+#    axarr[1].set_title('Varianza del periodograma en función del largo de la señal')
+#    axarr[1].set_ylabel('$v_{p}[N]$')
+#    axarr[1].set_xlabel('$N$')
+#    axarr[1].set_ylim((1.1*min(varianzas),max(varianzas)*1.1))
+#    axarr[1].axis('tight')
+#    axarr[1].grid()
     
     #Almaceno el resultado en el dataframe
     df = DataFrame(tus_resultados, columns=['$s_P$', '$v_P$'],index=N)
